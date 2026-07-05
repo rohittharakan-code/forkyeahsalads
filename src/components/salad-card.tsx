@@ -56,9 +56,8 @@ export function SaladCard({ salad, onAddToCart }: SaladCardProps) {
           </span>
           <button
             onClick={onAddToCart}
-            disabled={!salad.available}
-            className="flex items-center justify-center w-7 h-7 rounded-full bg-primary hover:bg-forest disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            aria-label={salad.available ? "Add to cart" : "Unavailable"}
+            className="flex items-center justify-center w-7 h-7 rounded-full bg-primary hover:bg-forest transition-colors"
+            aria-label="Add to cart"
           >
             <svg
               width="14"
