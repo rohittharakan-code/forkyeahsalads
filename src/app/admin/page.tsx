@@ -642,6 +642,11 @@ function SettingsTab() {
   const [shopLatitude, setShopLatitude] = useState("");
   const [shopLongitude, setShopLongitude] = useState("");
   const [deliveryRadius, setDeliveryRadius] = useState("10");
+  const [upiAddress, setUpiAddress] = useState("");
+  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [qrFile, setQrFile] = useState<File | null>(null);
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const qrFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchSettings() {
@@ -659,6 +664,9 @@ function SettingsTab() {
           data.shop_longitude != null ? String(data.shop_longitude) : ""
         );
         setDeliveryRadius(String(data.delivery_radius_km ?? 10));
+        setUpiAddress(data.upi_address ?? "");
+        setQrCodeUrl(data.qr_code_url ?? "");
+        setWhatsappNumber(data.whatsapp_number ?? "");
       }
       setLoading(false);
     }
@@ -671,26 +679,43 @@ function SettingsTab() {
     setSaving(true);
     setSaved(false);
 
-    const payload = {
-      fssai_license: fssaiLicense || null,
-      shop_latitude: shopLatitude ? parseFloat(shopLatitude) : null,
-      shop_longitude: shopLongitude ? parseFloat(shopLongitude) : null,
-      delivery_radius_km: parseFloat(deliveryRadius) || 10,
-    };
+    try {
+      let uploadedQrUrl = qrCodeUrl;
 
-    const { error } = await supabase
-      .from("site_settings")
-      .update(payload)
-      .eq("id", settings.id);
+      if (qrFile) {
+        const ext = qrFile.name.split(".").pop() ?? "png";
+        const path = `qr-code.${ext}`;
+        await supabase.storage.from("salad-images").upload(path, qrFile, { upsert: true });
+        const { data: { publicUrl } } = supabase.storage.from("salad-images").getPublicUrl(path);
+        uploadedQrUrl = publicUrl;
+      }
 
-    setSaving(false);
+      const payload = {
+        fssai_license: fssaiLicense || null,
+        shop_latitude: shopLatitude ? parseFloat(shopLatitude) : null,
+        shop_longitude: shopLongitude ? parseFloat(shopLongitude) : null,
+        delivery_radius_km: parseFloat(deliveryRadius) || 10,
+        upi_address: upiAddress || null,
+        qr_code_url: uploadedQrUrl || null,
+        whatsapp_number: whatsappNumber || null,
+      };
 
-    if (error) {
-      alert("Failed to save settings. Check console for details.");
-      console.error(error);
-    } else {
+      const { error } = await supabase
+        .from("site_settings")
+        .update(payload)
+        .eq("id", settings.id);
+
+      if (error) throw error;
+
+      setQrCodeUrl(uploadedQrUrl);
+      setQrFile(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      alert("Failed to save settings. Check console for details.");
+      console.error(err);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -773,6 +798,68 @@ function SettingsTab() {
             onChange={(e) => setDeliveryRadius(e.target.value)}
             className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
           />
+        </div>
+
+        <hr className="border-black/[0.06]" />
+
+        {/* UPI Address */}
+        <div>
+          <label className="block text-sm font-medium text-forest mb-1.5">
+            UPI Address
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. forkyeahsalads@upi"
+            value={upiAddress}
+            onChange={(e) => setUpiAddress(e.target.value)}
+            className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
+          />
+          <p className="text-xs text-muted mt-1">
+            Shown to customers at checkout for payment
+          </p>
+        </div>
+
+        {/* QR Code */}
+        <div>
+          <label className="block text-sm font-medium text-forest mb-1.5">
+            Payment QR Code
+          </label>
+          {qrCodeUrl && !qrFile && (
+            <div className="mb-3">
+              <img
+                src={qrCodeUrl}
+                alt="Payment QR Code"
+                className="w-32 h-32 object-contain rounded-xl border border-black/[0.06]"
+              />
+            </div>
+          )}
+          <input
+            ref={qrFileRef}
+            type="file"
+            accept="image/*"
+            onChange={(e) => setQrFile(e.target.files?.[0] ?? null)}
+            className="w-full text-sm text-muted file:mr-3 file:rounded-xl file:border-0 file:bg-mint file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-sage/30"
+          />
+          <p className="text-xs text-muted mt-1">
+            Upload your UPI / payment QR code image
+          </p>
+        </div>
+
+        {/* WhatsApp Number */}
+        <div>
+          <label className="block text-sm font-medium text-forest mb-1.5">
+            WhatsApp Number for Order Alerts
+          </label>
+          <input
+            type="tel"
+            placeholder="e.g. +91 98765 43210"
+            value={whatsappNumber}
+            onChange={(e) => setWhatsappNumber(e.target.value)}
+            className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
+          />
+          <p className="text-xs text-muted mt-1">
+            New order notifications will be sent to this number
+          </p>
         </div>
 
         {/* Save button */}

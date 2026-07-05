@@ -26,6 +26,9 @@ export interface SiteSettings {
   shop_latitude: number | null;
   shop_longitude: number | null;
   delivery_radius_km: number;
+  upi_address: string | null;
+  qr_code_url: string | null;
+  whatsapp_number: string | null;
   updated_at: string;
 }
 

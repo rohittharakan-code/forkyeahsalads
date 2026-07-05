@@ -39,7 +39,7 @@ export default function CheckoutPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
 
   // Delivery distance check state
-  const [siteSettings, setSiteSettings] = useState<Pick<SiteSettings, "shop_latitude" | "shop_longitude" | "delivery_radius_km"> | null>(null);
+  const [siteSettings, setSiteSettings] = useState<Pick<SiteSettings, "shop_latitude" | "shop_longitude" | "delivery_radius_km" | "upi_address" | "qr_code_url"> | null>(null);
   const [deliveryStatus, setDeliveryStatus] = useState<"idle" | "checking" | "available" | "too_far" | "denied">("idle");
   const [userDistance, setUserDistance] = useState<number | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
@@ -73,7 +73,7 @@ export default function CheckoutPage() {
       // Fetch site settings for delivery radius check
       const { data: settings } = await supabase
         .from("site_settings")
-        .select("shop_latitude, shop_longitude, delivery_radius_km")
+        .select("shop_latitude, shop_longitude, delivery_radius_km, upi_address, qr_code_url")
         .single();
 
       if (settings) {
@@ -204,6 +204,25 @@ export default function CheckoutPage() {
       if (orderError) {
         throw new Error(`Order failed: ${orderError.message}`);
       }
+
+      // Send WhatsApp notification to admin
+      try {
+        const notifyRes = await fetch("/api/notify-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            total: total(),
+            items: orderItems,
+            address: address.trim(),
+            phone: phone.trim(),
+            payment_method: paymentMethod,
+          }),
+        });
+        const notifyData = await notifyRes.json();
+        if (notifyData.ok && notifyData.whatsapp_url) {
+          window.open(notifyData.whatsapp_url, "_blank");
+        }
+      } catch {}
 
       clearCart();
       router.push("/account/orders?success=1");
@@ -363,7 +382,7 @@ export default function CheckoutPage() {
                 onChange={(e) => setPhone(e.target.value)}
                 required
                 className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest placeholder:text-muted/60 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
-                placeholder="e.g. +971 50 123 4567"
+                placeholder="e.g. +91 98765 43210"
               />
             </div>
 
@@ -421,7 +440,33 @@ export default function CheckoutPage() {
                 </p>
 
                 {paymentMethod === "proof_upload" && (
-                  <div className="mt-3">
+                  <div className="mt-3 space-y-3">
+                    {/* UPI details & QR */}
+                    {(siteSettings?.upi_address || siteSettings?.qr_code_url) && (
+                      <div className="bg-mint/40 rounded-xl p-4 space-y-3">
+                        {siteSettings.qr_code_url && (
+                          <div className="flex justify-center">
+                            <img
+                              src={siteSettings.qr_code_url}
+                              alt="Payment QR Code"
+                              className="w-44 h-44 object-contain rounded-lg"
+                            />
+                          </div>
+                        )}
+                        {siteSettings.upi_address && (
+                          <div className="text-center">
+                            <p className="text-xs text-muted mb-1">UPI Address</p>
+                            <p className="font-display text-sm font-semibold text-forest select-all">
+                              {siteSettings.upi_address}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-muted text-center">
+                          Scan the QR or pay to the UPI address above, then upload the screenshot below
+                        </p>
+                      </div>
+                    )}
+
                     <input
                       type="file"
                       accept="image/*"

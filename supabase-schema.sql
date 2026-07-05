@@ -76,6 +76,10 @@ create policy "Admins can insert site settings"
     )
   );
 
+alter table public.site_settings add column if not exists upi_address text;
+alter table public.site_settings add column if not exists qr_code_url text;
+alter table public.site_settings add column if not exists whatsapp_number text;
+
 -- Seed a single settings row
 insert into public.site_settings (fssai_license, shop_latitude, shop_longitude, delivery_radius_km)
 values (null, null, null, 10);
