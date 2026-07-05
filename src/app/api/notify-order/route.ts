@@ -21,7 +21,17 @@ export async function POST(request: Request) {
     const cleanNumber = whatsappNumber.replace(/[^0-9]/g, "");
 
     const itemLines = items
-      .map((i: { name: string; quantity: number; price: number }) => `  ${i.name} x${i.quantity} — ₹${(i.price * i.quantity).toFixed(0)}`)
+      .map((i: { name: string; quantity: number; price: number; proteins?: { name: string }[]; delivery_date?: string }) => {
+        let line = `  ${i.name} x${i.quantity} — ₹${(i.price * i.quantity).toFixed(0)}`;
+        if (i.proteins && i.proteins.length > 0) {
+          line += ` (${i.proteins.map((p) => p.name).join(", ")})`;
+        }
+        if (i.delivery_date) {
+          const d = new Date(i.delivery_date + "T00:00:00");
+          line += ` — ${d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+        }
+        return line;
+      })
       .join("\n");
 
     const paymentLabel = payment_method === "proof_upload" ? "Online (Proof Uploaded)" : "Cash on Delivery";

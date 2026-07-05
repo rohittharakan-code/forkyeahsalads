@@ -18,6 +18,11 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -31,25 +36,20 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
   const [proofFile, setProofFile] = useState<File | null>(null);
 
-  // Delivery distance check state
   const [siteSettings, setSiteSettings] = useState<Pick<SiteSettings, "shop_latitude" | "shop_longitude" | "delivery_radius_km" | "upi_address" | "qr_code_url"> | null>(null);
   const [deliveryStatus, setDeliveryStatus] = useState<"idle" | "checking" | "available" | "too_far" | "denied">("idle");
   const [userDistance, setUserDistance] = useState<number | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
 
-  // Auth check & profile pre-fill
   useEffect(() => {
     async function check() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
         router.replace("/login");
@@ -58,7 +58,6 @@ export default function CheckoutPage() {
 
       setUserId(user.id);
 
-      // Pre-fill from profile
       const { data: profile } = await supabase
         .from("profiles")
         .select("address, phone")
@@ -70,22 +69,18 @@ export default function CheckoutPage() {
         if (profile.phone) setPhone(profile.phone);
       }
 
-      // Fetch site settings for delivery radius check
       const { data: settings } = await supabase
         .from("site_settings")
         .select("shop_latitude, shop_longitude, delivery_radius_km, upi_address, qr_code_url")
         .single();
 
-      if (settings) {
-        setSiteSettings(settings);
-      }
+      if (settings) setSiteSettings(settings);
 
       setAuthChecked(true);
     }
     check();
   }, []);
 
-  // Redirect if cart is empty after auth is confirmed
   useEffect(() => {
     if (authChecked && items.length === 0) {
       router.replace("/cart");
@@ -94,7 +89,6 @@ export default function CheckoutPage() {
 
   function handleCheckLocation() {
     if (!siteSettings) return;
-
     setCheckingLocation(true);
     setDeliveryStatus("checking");
 
@@ -104,7 +98,6 @@ export default function CheckoutPage() {
         const shopLat = siteSettings.shop_latitude;
         const shopLng = siteSettings.shop_longitude;
 
-        // If shop location isn't configured, allow all orders
         if (shopLat == null || shopLng == null) {
           setDeliveryStatus("available");
           setCheckingLocation(false);
@@ -123,36 +116,23 @@ export default function CheckoutPage() {
         setCheckingLocation(false);
       },
       () => {
-        // User denied or error — don't block the order
         setDeliveryStatus("denied");
         setCheckingLocation(false);
       }
     );
   }
 
-  // Whether submit should be disabled due to delivery distance
   const deliveryBlocked = deliveryStatus === "too_far";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Validation
-    if (items.length === 0) {
-      setError("Your cart is empty.");
-      return;
-    }
-    if (!address.trim()) {
-      setError("Delivery address is required.");
-      return;
-    }
-    if (!phone.trim()) {
-      setError("Phone number is required.");
-      return;
-    }
+    if (items.length === 0) { setError("Your cart is empty."); return; }
+    if (!address.trim()) { setError("Delivery address is required."); return; }
+    if (!phone.trim()) { setError("Phone number is required."); return; }
     if (paymentMethod === "proof_upload" && !proofFile) {
-      setError("Please upload your payment proof.");
-      return;
+      setError("Please upload your payment proof."); return;
     }
 
     setSubmitting(true);
@@ -160,35 +140,26 @@ export default function CheckoutPage() {
     try {
       let paymentProofUrl: string | null = null;
 
-      // Upload payment proof if selected
       if (paymentMethod === "proof_upload" && proofFile) {
         const ext = proofFile.name.split(".").pop() ?? "jpg";
         const filePath = `${userId}/${Date.now()}.${ext}`;
-
         const { error: uploadError } = await supabase.storage
           .from("payment-proofs")
           .upload(filePath, proofFile);
-
-        if (uploadError) {
-          throw new Error(`Upload failed: ${uploadError.message}`);
-        }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("payment-proofs").getPublicUrl(filePath);
-
+        if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+        const { data: { publicUrl } } = supabase.storage.from("payment-proofs").getPublicUrl(filePath);
         paymentProofUrl = publicUrl;
       }
 
-      // Build order items
       const orderItems = items.map((i) => ({
         salad_id: i.salad.id,
         name: i.salad.name,
         price: i.salad.price,
         quantity: i.quantity,
+        proteins: i.selectedProteins,
+        delivery_date: i.deliveryDate,
       }));
 
-      // Insert order
       const { error: orderError } = await supabase.from("orders").insert({
         user_id: userId,
         items: orderItems,
@@ -201,11 +172,8 @@ export default function CheckoutPage() {
         phone: phone.trim(),
       });
 
-      if (orderError) {
-        throw new Error(`Order failed: ${orderError.message}`);
-      }
+      if (orderError) throw new Error(`Order failed: ${orderError.message}`);
 
-      // Send WhatsApp notification to admin
       try {
         const notifyRes = await fetch("/api/notify-order", {
           method: "POST",
@@ -233,7 +201,6 @@ export default function CheckoutPage() {
     }
   }
 
-  // Loading state while checking auth
   if (!authChecked) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -246,9 +213,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6 pb-10">
-      <h1 className="font-display text-2xl font-bold text-forest mb-6">
-        Checkout
-      </h1>
+      <h1 className="font-display text-2xl font-bold text-forest mb-6">Checkout</h1>
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Order Summary */}
@@ -257,41 +222,42 @@ export default function CheckoutPage() {
             Order Summary
           </h2>
           <div className="bg-mint/40 rounded-[14px] p-4 space-y-3">
-            {items.map((item) => (
-              <div
-                key={item.salad.id}
-                className="flex items-center gap-3"
-              >
-                <div className="relative w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-cream">
-                  <Image
-                    src={item.salad.image_url}
-                    alt={item.salad.name}
-                    fill
-                    className="object-cover"
-                    sizes="44px"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-display text-sm font-medium text-forest truncate">
-                    {item.salad.name}
+            {items.map((item, idx) => {
+              const proteinTotal = item.selectedProteins.reduce((s, p) => s + p.price, 0);
+              const lineTotal = (item.salad.price + proteinTotal) * item.quantity;
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <div className="relative w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-cream">
+                    <Image
+                      src={item.salad.image_url}
+                      alt={item.salad.name}
+                      fill
+                      className="object-cover"
+                      sizes="44px"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-display text-sm font-medium text-forest truncate">
+                      {item.salad.name}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {formatDate(item.deliveryDate)} · Qty: {item.quantity}
+                      {item.selectedProteins.length > 0 && (
+                        <> · {item.selectedProteins.map((p) => p.name).join(", ")}</>
+                      )}
+                    </p>
+                  </div>
+                  <p className="font-display text-sm font-semibold text-primary">
+                    ₹{lineTotal.toFixed(0)}
                   </p>
-                  <p className="text-[11px] text-muted">
-                    Qty: {item.quantity}
-                  </p>
                 </div>
-                <p className="font-display text-sm font-semibold text-primary">
-                  ₹{(item.salad.price * item.quantity).toFixed(2)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
 
-            {/* Total row */}
             <div className="flex justify-between items-center pt-3 border-t border-forest/10">
-              <p className="font-display text-[15px] font-bold text-forest">
-                Total
-              </p>
+              <p className="font-display text-[15px] font-bold text-forest">Total</p>
               <p className="font-display text-[15px] font-bold text-primary">
-                ₹{total().toFixed(2)}
+                ₹{total().toFixed(0)}
               </p>
             </div>
           </div>
@@ -351,10 +317,7 @@ export default function CheckoutPage() {
           </h2>
           <div className="space-y-4">
             <div>
-              <label
-                htmlFor="address"
-                className="block text-sm font-medium text-forest mb-1.5"
-              >
+              <label htmlFor="address" className="block text-sm font-medium text-forest mb-1.5">
                 Delivery Address <span className="text-red-500">*</span>
               </label>
               <input
@@ -369,10 +332,7 @@ export default function CheckoutPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="phone"
-                className="block text-sm font-medium text-forest mb-1.5"
-              >
+              <label htmlFor="phone" className="block text-sm font-medium text-forest mb-1.5">
                 Phone Number <span className="text-red-500">*</span>
               </label>
               <input
@@ -387,12 +347,8 @@ export default function CheckoutPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="notes"
-                className="block text-sm font-medium text-forest mb-1.5"
-              >
-                Delivery Notes{" "}
-                <span className="text-muted text-xs">(optional)</span>
+              <label htmlFor="notes" className="block text-sm font-medium text-forest mb-1.5">
+                Delivery Notes <span className="text-muted text-xs">(optional)</span>
               </label>
               <textarea
                 id="notes"
@@ -412,7 +368,6 @@ export default function CheckoutPage() {
             Payment Method
           </h2>
           <div className="space-y-3">
-            {/* Upload Payment Proof */}
             <label
               className={`flex items-start gap-3 rounded-[14px] p-4 cursor-pointer transition border ${
                 paymentMethod === "proof_upload"
@@ -441,7 +396,6 @@ export default function CheckoutPage() {
 
                 {paymentMethod === "proof_upload" && (
                   <div className="mt-3 space-y-3">
-                    {/* UPI details & QR */}
                     {(siteSettings?.upi_address || siteSettings?.qr_code_url) && (
                       <div className="bg-mint/40 rounded-xl p-4 space-y-3">
                         {siteSettings.qr_code_url && (
@@ -470,9 +424,7 @@ export default function CheckoutPage() {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) =>
-                        setProofFile(e.target.files?.[0] ?? null)
-                      }
+                      onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
                       className="block w-full text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 transition"
                     />
                     {proofFile && (
@@ -485,7 +437,6 @@ export default function CheckoutPage() {
               </div>
             </label>
 
-            {/* Cash on Delivery */}
             <label
               className={`flex items-start gap-3 rounded-[14px] p-4 cursor-pointer transition border ${
                 paymentMethod === "cod"
@@ -498,10 +449,7 @@ export default function CheckoutPage() {
                 name="payment"
                 value="cod"
                 checked={paymentMethod === "cod"}
-                onChange={() => {
-                  setPaymentMethod("cod");
-                  setProofFile(null);
-                }}
+                onChange={() => { setPaymentMethod("cod"); setProofFile(null); }}
                 className="mt-1 accent-[#2D6A4F]"
               />
               <div className="flex-1">
@@ -519,14 +467,12 @@ export default function CheckoutPage() {
           </div>
         </section>
 
-        {/* Error */}
         {error && (
           <div className="bg-red-50 text-red-700 px-4 py-3 rounded-[14px] text-sm">
             {error}
           </div>
         )}
 
-        {/* Submit */}
         <button
           type="submit"
           disabled={submitting || deliveryBlocked}
@@ -538,7 +484,7 @@ export default function CheckoutPage() {
               Placing Order...
             </>
           ) : (
-            `Place Order — ₹${total().toFixed(2)}`
+            `Place Order — ₹${total().toFixed(0)}`
           )}
         </button>
       </form>

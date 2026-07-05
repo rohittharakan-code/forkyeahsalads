@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { SaladItem, SiteSettings, Order, OrderStatus } from "@/lib/types";
+import { SaladItem, SiteSettings, Order, OrderStatus, ProteinOption } from "@/lib/types";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import {
   Plus,
@@ -12,11 +12,9 @@ import {
   Upload,
   ExternalLink,
   X,
-  Settings,
   Check,
+  CalendarDays,
 } from "lucide-react";
-
-/* ---------- constants ---------- */
 
 const ALL_STATUSES: OrderStatus[] = [
   "pending",
@@ -34,9 +32,10 @@ function formatStatus(s: string) {
     .join(" ");
 }
 
-/* ========================================
-   Admin Dashboard
-   ======================================== */
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+}
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState<"menu" | "orders" | "settings">("menu");
@@ -53,7 +52,6 @@ export default function AdminDashboard() {
         Admin Dashboard
       </h1>
 
-      {/* Tab bar */}
       <div className="flex gap-2 mb-8">
         {(["menu", "orders", "settings"] as const).map((t) => (
           <button
@@ -86,7 +84,7 @@ interface SaladForm {
   description: string;
   price: string;
   category: string;
-  available: boolean;
+  available_date: string;
 }
 
 const emptyForm: SaladForm = {
@@ -94,7 +92,7 @@ const emptyForm: SaladForm = {
   description: "",
   price: "",
   category: "",
-  available: true,
+  available_date: "",
 };
 
 function MenuTab() {
@@ -107,13 +105,16 @@ function MenuTab() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [ingredientsInput, setIngredientsInput] = useState("");
+  const [proteinOptions, setProteinOptions] = useState<ProteinOption[]>([]);
+  const [newProteinName, setNewProteinName] = useState("");
+  const [newProteinPrice, setNewProteinPrice] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function fetchItems() {
     const { data } = await supabase
       .from("salad_items")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("available_date", { ascending: true });
     setItems(data ?? []);
     setLoading(false);
   }
@@ -126,6 +127,7 @@ function MenuTab() {
     setEditingId(null);
     setForm(emptyForm);
     setIngredientsInput("");
+    setProteinOptions([]);
     setImageFile(null);
     setShowForm(true);
   }
@@ -137,9 +139,10 @@ function MenuTab() {
       description: item.description,
       price: String(item.price),
       category: item.category,
-      available: item.available,
+      available_date: item.available_date ?? "",
     });
     setIngredientsInput(item.ingredients?.join(", ") ?? "");
+    setProteinOptions(item.protein_options ?? []);
     setImageFile(null);
     setShowForm(true);
   }
@@ -149,7 +152,22 @@ function MenuTab() {
     setEditingId(null);
     setForm(emptyForm);
     setIngredientsInput("");
+    setProteinOptions([]);
     setImageFile(null);
+  }
+
+  function addProtein() {
+    if (!newProteinName.trim() || !newProteinPrice.trim()) return;
+    setProteinOptions((prev) => [
+      ...prev,
+      { name: newProteinName.trim(), price: parseFloat(newProteinPrice) },
+    ]);
+    setNewProteinName("");
+    setNewProteinPrice("");
+  }
+
+  function removeProtein(index: number) {
+    setProteinOptions((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function uploadImage(file: File): Promise<string> {
@@ -180,7 +198,8 @@ function MenuTab() {
         description: form.description,
         price: parseFloat(form.price),
         category: form.category,
-        available: form.available,
+        available_date: form.available_date || null,
+        protein_options: proteinOptions,
         ingredients: ingredientsInput
           .split(",")
           .map((s) => s.trim())
@@ -216,14 +235,6 @@ function MenuTab() {
     await fetchItems();
   }
 
-  async function toggleAvailable(item: SaladItem) {
-    await supabase
-      .from("salad_items")
-      .update({ available: !item.available })
-      .eq("id", item.id);
-    await fetchItems();
-  }
-
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -236,7 +247,7 @@ function MenuTab() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold font-display text-forest">
-          Salad Items
+          Menu Items
         </h2>
         {!showForm && (
           <button
@@ -244,12 +255,11 @@ function MenuTab() {
             className="inline-flex items-center gap-2 bg-primary rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 transition"
           >
             <Plus className="h-4 w-4" />
-            Add New Salad
+            Add Salad
           </button>
         )}
       </div>
 
-      {/* Inline form */}
       {showForm && (
         <form
           onSubmit={handleSubmit}
@@ -266,9 +276,7 @@ function MenuTab() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-forest mb-1">
-                Name
-              </label>
+              <label className="block text-sm font-medium text-forest mb-1">Name</label>
               <input
                 type="text"
                 required
@@ -279,12 +287,10 @@ function MenuTab() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-forest mb-1">
-                Price
-              </label>
+              <label className="block text-sm font-medium text-forest mb-1">Price (₹)</label>
               <input
                 type="number"
-                step="0.01"
+                step="1"
                 min="0"
                 required
                 value={form.price}
@@ -294,9 +300,7 @@ function MenuTab() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-forest mb-1">
-                Category
-              </label>
+              <label className="block text-sm font-medium text-forest mb-1">Category</label>
               <input
                 type="text"
                 required
@@ -307,9 +311,18 @@ function MenuTab() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-forest mb-1">
-                Image
-              </label>
+              <label className="block text-sm font-medium text-forest mb-1">Available Date</label>
+              <input
+                type="date"
+                required
+                value={form.available_date}
+                onChange={(e) => setForm({ ...form, available_date: e.target.value })}
+                className="w-full rounded-xl border border-black/6 bg-white px-3 py-2 text-sm text-forest focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-forest mb-1">Image</label>
               <input
                 ref={fileRef}
                 type="file"
@@ -321,26 +334,19 @@ function MenuTab() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-forest mb-1.5">
-              Description
-            </label>
+            <label className="block text-sm font-medium text-forest mb-1.5">Description</label>
             <textarea
               required
               rows={2}
               value={form.description}
-              onChange={(e) =>
-                setForm({ ...form, description: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
               className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-forest mb-1.5">
-              Ingredients{" "}
-              <span className="text-xs text-muted font-normal">
-                (comma-separated)
-              </span>
+              Ingredients <span className="text-xs text-muted font-normal">(comma-separated)</span>
             </label>
             <textarea
               rows={2}
@@ -351,19 +357,51 @@ function MenuTab() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="available"
-              type="checkbox"
-              checked={form.available}
-              onChange={(e) =>
-                setForm({ ...form, available: e.target.checked })
-              }
-              className="h-4 w-4 rounded border-black/6 text-primary focus:ring-primary"
-            />
-            <label htmlFor="available" className="text-sm text-forest">
-              Available
+          {/* Protein Options */}
+          <div>
+            <label className="block text-sm font-medium text-forest mb-1.5">
+              Protein Add-ons
             </label>
+            {proteinOptions.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {proteinOptions.map((p, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 bg-mint text-primary text-xs font-medium px-3 py-1.5 rounded-full"
+                  >
+                    {p.name} +₹{p.price.toFixed(0)}
+                    <button type="button" onClick={() => removeProtein(i)} className="hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. Chicken"
+                value={newProteinName}
+                onChange={(e) => setNewProteinName(e.target.value)}
+                className="flex-1 rounded-xl border border-black/6 bg-white px-3 py-2 text-sm text-forest focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <input
+                type="number"
+                placeholder="Price"
+                min="0"
+                step="1"
+                value={newProteinPrice}
+                onChange={(e) => setNewProteinPrice(e.target.value)}
+                className="w-24 rounded-xl border border-black/6 bg-white px-3 py-2 text-sm text-forest focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={addProtein}
+                className="rounded-xl bg-mint px-3 py-2 text-sm font-medium text-primary hover:bg-sage/30 transition"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -386,10 +424,9 @@ function MenuTab() {
         </form>
       )}
 
-      {/* Items list */}
       {items.length === 0 ? (
         <p className="text-sm text-muted text-center py-12">
-          No salad items yet. Click &ldquo;Add New Salad&rdquo; to get started.
+          No salad items yet. Click &ldquo;Add Salad&rdquo; to get started.
         </p>
       ) : (
         <div className="space-y-3">
@@ -398,7 +435,6 @@ function MenuTab() {
               key={item.id}
               className="flex items-center gap-4 bg-white rounded-[14px] p-4 border border-black/6"
             >
-              {/* Thumbnail */}
               {item.image_url && (
                 <img
                   src={item.image_url}
@@ -407,27 +443,25 @@ function MenuTab() {
                 />
               )}
 
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-forest truncate">{item.name}</p>
                 <p className="text-sm text-muted">
-                  ₹{item.price.toFixed(2)} &middot; {item.category}
+                  ₹{item.price.toFixed(0)} &middot; {item.category}
                 </p>
+                {item.protein_options && item.protein_options.length > 0 && (
+                  <p className="text-xs text-muted/70 mt-0.5">
+                    Proteins: {item.protein_options.map((p) => `${p.name} +₹${p.price}`).join(", ")}
+                  </p>
+                )}
               </div>
 
-              {/* Available toggle */}
-              <button
-                onClick={() => toggleAvailable(item)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  item.available
-                    ? "bg-mint text-primary hover:bg-sage/30"
-                    : "bg-cream text-muted hover:bg-cream/80"
-                }`}
-              >
-                {item.available ? "Available" : "Unavailable"}
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 bg-mint text-primary text-xs font-medium px-2.5 py-1 rounded-full">
+                  <CalendarDays className="w-3 h-3" />
+                  {item.available_date ? formatDate(item.available_date) : "No date"}
+                </span>
+              </div>
 
-              {/* Actions */}
               <button
                 onClick={() => openEdit(item)}
                 className="rounded-lg p-2 text-muted hover:bg-cream hover:text-forest transition"
@@ -499,7 +533,6 @@ function OrdersTab() {
 
   return (
     <div>
-      {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-6">
         {(["all", ...ALL_STATUSES] as const).map((s) => (
           <button
@@ -517,9 +550,7 @@ function OrdersTab() {
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-muted text-center py-12">
-          No orders found.
-        </p>
+        <p className="text-sm text-muted text-center py-12">No orders found.</p>
       ) : (
         <div className="space-y-4">
           {filtered.map((order) => (
@@ -527,7 +558,6 @@ function OrdersTab() {
               key={order.id}
               className="bg-white rounded-[14px] p-5 border border-black/6"
             >
-              {/* Header */}
               <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                 <div>
                   <p className="font-mono text-xs text-muted">
@@ -556,24 +586,31 @@ function OrdersTab() {
                 </div>
               </div>
 
-              {/* Items */}
               <ul className="text-sm text-forest space-y-1 mb-3">
                 {order.items.map((item, idx) => (
                   <li key={idx} className="flex justify-between">
                     <span>
                       {item.name} &times; {item.quantity}
+                      {item.proteins && item.proteins.length > 0 && (
+                        <span className="text-xs text-muted ml-1">
+                          ({item.proteins.map((p) => p.name).join(", ")})
+                        </span>
+                      )}
+                      {item.delivery_date && (
+                        <span className="text-xs text-muted ml-1">
+                          — {formatDate(item.delivery_date)}
+                        </span>
+                      )}
                     </span>
                     <span className="text-primary font-display">
-                      ₹{(item.price * item.quantity).toFixed(2)}
+                      ₹{(item.price * item.quantity).toFixed(0)}
                     </span>
                   </li>
                 ))}
               </ul>
 
-              {/* Footer */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/6 pt-3">
                 <div className="flex items-center gap-4">
-                  {/* Payment info */}
                   <span className="text-sm text-muted capitalize">
                     {order.payment_method === "proof_upload"
                       ? "Online (Proof)"
@@ -594,11 +631,10 @@ function OrdersTab() {
                     )}
 
                   <p className="font-display font-bold text-forest text-base">
-                    ₹{order.total.toFixed(2)}
+                    ₹{order.total.toFixed(0)}
                   </p>
                 </div>
 
-                {/* Status dropdown */}
                 <div className="flex items-center gap-2">
                   {updatingId === order.id && (
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -657,12 +693,8 @@ function SettingsTab() {
       if (data) {
         setSettings(data as SiteSettings);
         setFssaiLicense(data.fssai_license ?? "");
-        setShopLatitude(
-          data.shop_latitude != null ? String(data.shop_latitude) : ""
-        );
-        setShopLongitude(
-          data.shop_longitude != null ? String(data.shop_longitude) : ""
-        );
+        setShopLatitude(data.shop_latitude != null ? String(data.shop_latitude) : "");
+        setShopLongitude(data.shop_longitude != null ? String(data.shop_longitude) : "");
         setDeliveryRadius(String(data.delivery_radius_km ?? 10));
         setUpiAddress(data.upi_address ?? "");
         setQrCodeUrl(data.qr_code_url ?? "");
@@ -737,7 +769,6 @@ function SettingsTab() {
         onSubmit={handleSave}
         className="bg-white rounded-[14px] p-5 border border-black/[0.06] space-y-6"
       >
-        {/* FSSAI License */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             FSSAI License Number
@@ -752,39 +783,31 @@ function SettingsTab() {
           />
         </div>
 
-        {/* Shop Location */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             Shop Location
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <input
-                type="number"
-                step="any"
-                placeholder="Latitude"
-                value={shopLatitude}
-                onChange={(e) => setShopLatitude(e.target.value)}
-                className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
-              />
-            </div>
-            <div>
-              <input
-                type="number"
-                step="any"
-                placeholder="Longitude"
-                value={shopLongitude}
-                onChange={(e) => setShopLongitude(e.target.value)}
-                className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
-              />
-            </div>
+            <input
+              type="number"
+              step="any"
+              placeholder="Latitude"
+              value={shopLatitude}
+              onChange={(e) => setShopLatitude(e.target.value)}
+              className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
+            />
+            <input
+              type="number"
+              step="any"
+              placeholder="Longitude"
+              value={shopLongitude}
+              onChange={(e) => setShopLongitude(e.target.value)}
+              className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
+            />
           </div>
-          <p className="text-xs text-muted mt-1">
-            Enter your shop&apos;s GPS coordinates
-          </p>
+          <p className="text-xs text-muted mt-1">Enter your shop&apos;s GPS coordinates</p>
         </div>
 
-        {/* Delivery Radius */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             Delivery Radius (km)
@@ -802,7 +825,6 @@ function SettingsTab() {
 
         <hr className="border-black/[0.06]" />
 
-        {/* UPI Address */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             UPI Address
@@ -814,12 +836,9 @@ function SettingsTab() {
             onChange={(e) => setUpiAddress(e.target.value)}
             className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
           />
-          <p className="text-xs text-muted mt-1">
-            Shown to customers at checkout for payment
-          </p>
+          <p className="text-xs text-muted mt-1">Shown to customers at checkout for payment</p>
         </div>
 
-        {/* QR Code */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             Payment QR Code
@@ -840,12 +859,9 @@ function SettingsTab() {
             onChange={(e) => setQrFile(e.target.files?.[0] ?? null)}
             className="w-full text-sm text-muted file:mr-3 file:rounded-xl file:border-0 file:bg-mint file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-sage/30"
           />
-          <p className="text-xs text-muted mt-1">
-            Upload your UPI / payment QR code image
-          </p>
+          <p className="text-xs text-muted mt-1">Upload your UPI / payment QR code image</p>
         </div>
 
-        {/* WhatsApp Number */}
         <div>
           <label className="block text-sm font-medium text-forest mb-1.5">
             WhatsApp Number for Order Alerts
@@ -857,12 +873,9 @@ function SettingsTab() {
             onChange={(e) => setWhatsappNumber(e.target.value)}
             className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-forest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition"
           />
-          <p className="text-xs text-muted mt-1">
-            New order notifications will be sent to this number
-          </p>
+          <p className="text-xs text-muted mt-1">New order notifications will be sent to this number</p>
         </div>
 
-        {/* Save button */}
         <div className="flex items-center gap-3 pt-2">
           <button
             type="submit"

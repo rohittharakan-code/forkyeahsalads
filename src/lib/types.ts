@@ -8,6 +8,11 @@ export interface Profile {
   created_at: string;
 }
 
+export interface ProteinOption {
+  name: string;
+  price: number;
+}
+
 export interface SaladItem {
   id: string;
   name: string;
@@ -16,7 +21,8 @@ export interface SaladItem {
   image_url: string;
   category: string;
   ingredients: string[];
-  available: boolean;
+  available_date: string;
+  protein_options: ProteinOption[];
   created_at: string;
 }
 
@@ -35,6 +41,8 @@ export interface SiteSettings {
 export interface CartItem {
   salad: SaladItem;
   quantity: number;
+  selectedProteins: ProteinOption[];
+  deliveryDate: string;
 }
 
 export type PaymentMethod = "proof_upload" | "cod";
@@ -47,10 +55,19 @@ export type OrderStatus =
   | "delivered"
   | "cancelled";
 
+export interface OrderItem {
+  salad_id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  proteins: ProteinOption[];
+  delivery_date: string;
+}
+
 export interface Order {
   id: string;
   user_id: string;
-  items: { salad_id: string; name: string; price: number; quantity: number }[];
+  items: OrderItem[];
   total: number;
   status: OrderStatus;
   payment_method: PaymentMethod;
