@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-forest: #1A2E22;
+  --color-primary: #2D6A4F;
+  --color-sage: #95B8A3;
+  --color-terracotta: #C17B4A;
+  --color-golden: #D4A843;
+  --color-cream: #FAF6F0;
+  --color-mint: #E8F5E9;
+  --color-muted: #6B7C72;
+  --font-display: var(--font-space-grotesk);
+  --font-body: var(--font-dm-sans);
+}
+
+body {
+  font-family: var(--font-body), "DM Sans", system-ui, sans-serif;
+  background: #FAF6F0;
+  color: #1A2E22;
+}
