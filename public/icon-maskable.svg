@@ -1,0 +1,6 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#2D6A4F"/>
+  <path d="M256 100C256 100 130 200 130 296C130 372 180 420 256 420C332 420 382 372 382 296C382 200 256 100 256 100Z" fill="#95B8A3" opacity="0.25"/>
+  <text x="256" y="310" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="150" fill="#FAF6F0" letter-spacing="-4">FY</text>
+  <line x1="186" y1="370" x2="326" y2="370" stroke="#C17B4A" stroke-width="14" stroke-linecap="round"/>
+</svg>
